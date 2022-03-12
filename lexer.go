@@ -165,5 +165,52 @@ func lexNumeric(source string, ic cursor) (*token, cursor, bool) {
 	}, cur, true
 }
 
-func lexString(source string, ic cursor) (*token, cursor, bool)
+// Strings start and end with a single apostrophe, and may contain one apostrophe if followed by another to escape it
+func lexString(source string, ic cursor) (*token, cursor, bool) {
+	return lexCharacterDelimited(source, ic, '\'')
+}
+
+// Lex a sequence of characters delimited by delimiter.
+// Handles escaping of delimiter by doubling it (eg 'here''s an escaped apostrophe')
+func lexCharacterDelimited(source string, ic cursor, delimiter byte) (*token, cursor, bool) {
+	cur := ic
+
+	if len(source[cur.pointer:]) == 0 {
+		return nil, ic, false
+	}
+
+	if source[cur.pointer] != delimiter {
+		return nil, ic, false
+	}
+
+	// Found the starting delimiter, advance and look for the next one
+	cur.loc.col++
+	cur.pointer++
+
+	var value []byte
+	for ; cur.pointer < uint(len(source)); cur.pointer++ {
+		c := source[cur.pointer]
+
+		if c == delimiter {
+			if cur.pointer+1 >= uint(len(source)) || source[cur.pointer+1] != delimiter {
+				return &token{
+					value: string(value),
+					loc:   ic.loc,
+					kind:  stringKind,
+				}, cur, true
+			}
+			// The delimiter was escaped, add it as a literal and continue
+			value = append(value, delimiter)
+			// Skip the second one
+			cur.loc.col++
+			cur.pointer++
+		}
+
+		value = append(value, c)
+		cur.loc.col++
+	}
+
+	return nil, ic, false
+}
+
 func lexSymbol(source string, ic cursor) (*token, cursor, bool)
