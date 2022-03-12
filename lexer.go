@@ -92,6 +92,78 @@ lex:
 // Lexers for fundamental token types
 func lexIdentifier(source string, ic cursor) (*token, cursor, bool)
 func lexKeyword(source string, ic cursor) (*token, cursor, bool)
-func lexNumeric(source string, ic cursor) (*token, cursor, bool)
+
+// Attempt to lex a number from the source at the given cursor
+func lexNumeric(source string, ic cursor) (*token, cursor, bool) {
+	cur := ic
+	periodFound := false
+	expMarkerFound := false
+
+	for ; cur.pointer < uint(len(source)); cur.pointer++ {
+		c := source[cur.pointer]
+		cur.loc.col++
+
+		isDigit := c >= '0' && c <= '9'
+		isPeriod := c == '.'
+		isExpMarker := c == 'e'
+
+		// First glyph must be a digit or a period or this isn't a number and we're done
+		if cur.pointer == ic.pointer {
+			if !isDigit && !isPeriod {
+				return nil, ic, false
+			}
+			periodFound = isPeriod
+			continue
+		}
+
+		// There can only be one period in a number
+		if isPeriod {
+			if periodFound {
+				return nil, ic, false
+			}
+			periodFound = true
+			continue
+		}
+
+		// There can only be one expMarker
+		if isExpMarker {
+			if expMarkerFound {
+				return nil, ic, false
+			}
+			// No periods allowed after expMarker
+			periodFound, expMarkerFound = true, true
+
+			// expMarker cannot be the last glyph in the source
+			if cur.pointer == uint(len(source)-1) {
+				return nil, ic, false
+			}
+
+			cNext := source[cur.pointer+1]
+			if cNext == '-' || cNext == '+' {
+				cur.pointer++
+				cur.loc.col++
+			}
+
+			continue
+		}
+
+		// Not a period, not an expMarker, not a digit? We're done.
+		if !isDigit {
+			break
+		}
+	}
+
+	// No characters accumulated
+	if cur.pointer == ic.pointer {
+		return nil, ic, false
+	}
+
+	return &token{
+		value: source[ic.pointer:cur.pointer],
+		loc:   ic.loc,
+		kind:  numericKind,
+	}, cur, true
+}
+
 func lexString(source string, ic cursor) (*token, cursor, bool)
 func lexSymbol(source string, ic cursor) (*token, cursor, bool)
