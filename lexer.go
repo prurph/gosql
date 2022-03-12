@@ -5,74 +5,74 @@ import (
 	"strings"
 )
 
-type location struct {
-	line uint
-	col  uint
+type Location struct {
+	Line uint
+	Col  uint
 }
 
-type keyword string
+type Keyword string
 
 const (
-	selectKeyword keyword = "select"
-	fromKeyword   keyword = "from"
-	asKeyword     keyword = "as"
-	tableKeyword  keyword = "table"
-	createKeyword keyword = "create"
-	insertKeyword keyword = "insert"
-	intoKeyword   keyword = "into"
-	valuesKeyword keyword = "values"
-	intKeyword    keyword = "int"
-	textKeyword   keyword = "text"
+	SelectKeyword Keyword = "select"
+	FromKeyword   Keyword = "from"
+	AsKeyword     Keyword = "as"
+	TableKeyword  Keyword = "table"
+	CreateKeyword Keyword = "create"
+	InsertKeyword Keyword = "insert"
+	IntoKeyword   Keyword = "into"
+	ValuesKeyword Keyword = "values"
+	IntKeyword    Keyword = "int"
+	TextKeyword   Keyword = "text"
 )
 
-type symbol string
+type Symbol string
 
 const (
-	semicolonSymbol  symbol = ";"
-	asteriskSymbol   symbol = "*"
-	commaSymbol      symbol = ","
-	leftparenSymbol  symbol = "("
-	rightparenSymbol symbol = ")"
+	SemicolonSymbol  Symbol = ";"
+	AsteriskSymbol   Symbol = "*"
+	CommaSymbol      Symbol = ","
+	LeftParenSymbol  Symbol = "("
+	RightParenSymbol Symbol = ")"
 )
 
-type tokenKind uint
+type TokenKind uint
 
 const (
-	keywordKind tokenKind = iota
-	symbolKind
-	identifierKind
-	stringKind
-	numericKind
+	KeywordKind TokenKind = iota
+	SymbolKind
+	IdentifierKind
+	StringKind
+	NumericKind
 )
 
-type token struct {
-	value string
-	kind  tokenKind
-	loc   location
+type Token struct {
+	Value string
+	Kind  TokenKind
+	Loc   Location
 }
 
-type cursor struct {
-	pointer uint
-	loc     location
+type Cursor struct {
+	Pointer uint
+	Loc     Location
 }
 
-func (t *token) equals(other *token) bool {
-	return t.value == other.value && t.kind == other.kind
+func (t *Token) equals(other *Token) bool {
+	return t.Value == other.Value && t.Kind == other.Kind
 }
 
 // A lexer takes a string and a cursor and attempts to
 // parse a token. If successful, returns a new token and
 // a new cursor.
-type lexer func(string, cursor) (*token, cursor, bool)
+type lexer func(string, Cursor) (*Token, Cursor, bool)
 
 // Main lexing loop
-func lex(source string) ([]*token, error) {
-	tokens := []*token{}
-	cur := cursor{}
-	lexers := []lexer{lexIdentifier, lexKeyword, lexNumeric, lexString, lexSymbol}
+func lex(source string) ([]*Token, error) {
+	tokens := []*Token{}
+	cur := Cursor{}
+	lexers := []lexer{lexKeyword, lexSymbol, lexString, lexNumeric, lexIdentifier}
 
 lex:
-	for cur.pointer < uint(len(source)) {
+	for cur.Pointer < uint(len(source)) {
 		for _, l := range lexers {
 			if token, newCursor, ok := l(source, cur); ok {
 				cur = newCursor
@@ -85,29 +85,68 @@ lex:
 		}
 		hint := ""
 		if len(tokens) > 0 {
-			hint = " after " + tokens[len(tokens)-1].value
+			hint = " after " + tokens[len(tokens)-1].Value
 		}
-		return nil, fmt.Errorf("Unable to lex token %s at %d:%d", hint, cur.loc.line, cur.loc.col)
+		return nil, fmt.Errorf("Unable to lex token %s at %d:%d", hint, cur.Loc.Line, cur.Loc.Col)
 	}
 	return tokens, nil
 }
 
-// Lexers for fundamental token types
-func lexIdentifier(source string, ic cursor) (*token, cursor, bool)
+// Attempt to lex an identifier: a double-quoted string, or a group of  characters starting
+// with an alphabetical character and possibly containing numbers, underscores, or $. For
+// this toy implementation, only ASCII characters are supported.
+func lexIdentifier(source string, ic Cursor) (*Token, Cursor, bool) {
+	// Double-quoted identifier
+	if token, newCursor, ok := lexCharacterDelimited(source, ic, '"'); ok {
+		return token, newCursor, true
+	}
 
-func lexKeyword(source string, ic cursor) (*token, cursor, bool) {
 	cur := ic
-	keywords := []keyword{
-		selectKeyword,
-		fromKeyword,
-		asKeyword,
-		tableKeyword,
-		createKeyword,
-		insertKeyword,
-		intoKeyword,
-		valuesKeyword,
-		intKeyword,
-		textKeyword,
+
+	c := source[cur.Pointer]
+	// Must start with an alphabetical character
+	isAlphabetical := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+	if !isAlphabetical {
+		return nil, ic, false
+	}
+	cur.Pointer++
+	cur.Loc.Col++
+
+	value := []byte{c}
+	for ; cur.Pointer < uint(len(source)); cur.Pointer++ {
+		c = source[cur.Pointer]
+		isAlphaNumeric := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c > '0' && c <= '9')
+		if isAlphaNumeric || c == '$' || c == '_' {
+			value = append(value, c)
+			cur.Loc.Col++
+			continue
+		}
+		break
+	}
+
+	if len(value) == 0 {
+		return nil, ic, false
+	}
+	return &Token{
+		Value: strings.ToLower(string(value)),
+		Kind:  IdentifierKind,
+		Loc:   ic.Loc,
+	}, cur, true
+}
+
+func lexKeyword(source string, ic Cursor) (*Token, Cursor, bool) {
+	cur := ic
+	keywords := []Keyword{
+		SelectKeyword,
+		FromKeyword,
+		AsKeyword,
+		TableKeyword,
+		CreateKeyword,
+		InsertKeyword,
+		IntoKeyword,
+		ValuesKeyword,
+		IntKeyword,
+		TextKeyword,
 	}
 
 	var options []string
@@ -120,32 +159,32 @@ func lexKeyword(source string, ic cursor) (*token, cursor, bool) {
 		return nil, ic, false
 	}
 
-	cur.pointer = ic.pointer + uint(len(match))
-	cur.loc.col = ic.loc.col + uint(len(match))
+	cur.Pointer = ic.Pointer + uint(len(match))
+	cur.Loc.Col = ic.Loc.Col + uint(len(match))
 
-	return &token{
-		value: match,
-		kind:  keywordKind,
-		loc:   ic.loc,
+	return &Token{
+		Value: match,
+		Kind:  KeywordKind,
+		Loc:   ic.Loc,
 	}, cur, true
 }
 
 // Attempt to lex a number from the source at the given cursor
-func lexNumeric(source string, ic cursor) (*token, cursor, bool) {
+func lexNumeric(source string, ic Cursor) (*Token, Cursor, bool) {
 	cur := ic
 	periodFound := false
 	expMarkerFound := false
 
-	for ; cur.pointer < uint(len(source)); cur.pointer++ {
-		c := source[cur.pointer]
-		cur.loc.col++
+	for ; cur.Pointer < uint(len(source)); cur.Pointer++ {
+		c := source[cur.Pointer]
+		cur.Loc.Col++
 
 		isDigit := c >= '0' && c <= '9'
 		isPeriod := c == '.'
 		isExpMarker := c == 'e'
 
 		// First glyph must be a digit or a period or this isn't a number and we're done
-		if cur.pointer == ic.pointer {
+		if cur.Pointer == ic.Pointer {
 			if !isDigit && !isPeriod {
 				return nil, ic, false
 			}
@@ -171,14 +210,14 @@ func lexNumeric(source string, ic cursor) (*token, cursor, bool) {
 			periodFound, expMarkerFound = true, true
 
 			// expMarker cannot be the last glyph in the source
-			if cur.pointer == uint(len(source)-1) {
+			if cur.Pointer == uint(len(source)-1) {
 				return nil, ic, false
 			}
 
-			cNext := source[cur.pointer+1]
+			cNext := source[cur.Pointer+1]
 			if cNext == '-' || cNext == '+' {
-				cur.pointer++
-				cur.loc.col++
+				cur.Pointer++
+				cur.Loc.Col++
 			}
 
 			continue
@@ -191,77 +230,77 @@ func lexNumeric(source string, ic cursor) (*token, cursor, bool) {
 	}
 
 	// No characters accumulated
-	if cur.pointer == ic.pointer {
+	if cur.Pointer == ic.Pointer {
 		return nil, ic, false
 	}
 
-	return &token{
-		value: source[ic.pointer:cur.pointer],
-		loc:   ic.loc,
-		kind:  numericKind,
+	return &Token{
+		Value: source[ic.Pointer:cur.Pointer],
+		Loc:   ic.Loc,
+		Kind:  NumericKind,
 	}, cur, true
 }
 
 // Strings start and end with a single apostrophe, and may contain one apostrophe if followed by another to escape it
-func lexString(source string, ic cursor) (*token, cursor, bool) {
+func lexString(source string, ic Cursor) (*Token, Cursor, bool) {
 	return lexCharacterDelimited(source, ic, '\'')
 }
 
 // Lex a sequence of characters delimited by delimiter.
 // Handles escaping of delimiter by doubling it (eg 'here''s an escaped apostrophe')
-func lexCharacterDelimited(source string, ic cursor, delimiter byte) (*token, cursor, bool) {
+func lexCharacterDelimited(source string, ic Cursor, delimiter byte) (*Token, Cursor, bool) {
 	cur := ic
 
-	if len(source[cur.pointer:]) == 0 {
+	if len(source[cur.Pointer:]) == 0 {
 		return nil, ic, false
 	}
 
-	if source[cur.pointer] != delimiter {
+	if source[cur.Pointer] != delimiter {
 		return nil, ic, false
 	}
 
 	// Found the starting delimiter, advance and look for the next one
-	cur.loc.col++
-	cur.pointer++
+	cur.Loc.Col++
+	cur.Pointer++
 
 	var value []byte
-	for ; cur.pointer < uint(len(source)); cur.pointer++ {
-		c := source[cur.pointer]
+	for ; cur.Pointer < uint(len(source)); cur.Pointer++ {
+		c := source[cur.Pointer]
 
 		if c == delimiter {
-			if cur.pointer+1 >= uint(len(source)) || source[cur.pointer+1] != delimiter {
-				return &token{
-					value: string(value),
-					loc:   ic.loc,
-					kind:  stringKind,
+			if cur.Pointer+1 >= uint(len(source)) || source[cur.Pointer+1] != delimiter {
+				return &Token{
+					Value: string(value),
+					Loc:   ic.Loc,
+					Kind:  StringKind,
 				}, cur, true
 			}
 			// The delimiter was escaped, add it as a literal and continue
 			value = append(value, delimiter)
 			// Skip the second one
-			cur.loc.col++
-			cur.pointer++
+			cur.Loc.Col++
+			cur.Pointer++
 		}
 
 		value = append(value, c)
-		cur.loc.col++
+		cur.Loc.Col++
 	}
 
 	return nil, ic, false
 }
 
 // Symbols are elements of a fixed set of strings. Also discards whitespace.
-func lexSymbol(source string, ic cursor) (*token, cursor, bool) {
-	c := source[ic.pointer]
+func lexSymbol(source string, ic Cursor) (*Token, Cursor, bool) {
+	c := source[ic.Pointer]
 	cur := ic
-	cur.pointer++
-	cur.loc.col++
+	cur.Pointer++
+	cur.Loc.Col++
 
 	// Syntax that should be discarded
 	switch c {
 	case '\n':
-		cur.loc.line++
-		cur.loc.col = 0
+		cur.Loc.Line++
+		cur.Loc.Col = 0
 		fallthrough
 	case '\t':
 		fallthrough
@@ -270,12 +309,12 @@ func lexSymbol(source string, ic cursor) (*token, cursor, bool) {
 	}
 
 	// Syntax that should be maintained
-	symbols := []symbol{
-		commaSymbol,
-		leftparenSymbol,
-		rightparenSymbol,
-		semicolonSymbol,
-		asteriskSymbol,
+	symbols := []Symbol{
+		CommaSymbol,
+		LeftParenSymbol,
+		RightParenSymbol,
+		SemicolonSymbol,
+		AsteriskSymbol,
 	}
 
 	// This language would be cooler with .map
@@ -291,28 +330,29 @@ func lexSymbol(source string, ic cursor) (*token, cursor, bool) {
 		return nil, ic, false
 	}
 
-	cur.pointer = ic.pointer + uint(len(match))
-	cur.loc.col = ic.loc.col + uint(len(match))
+	cur.Pointer = ic.Pointer + uint(len(match))
+	cur.Loc.Col = ic.Loc.Col + uint(len(match))
 
-	return &token{
-		value: match,
-		loc:   ic.loc,
-		kind:  symbolKind,
+	return &Token{
+		Value: match,
+		Loc:   ic.Loc,
+		Kind:  SymbolKind,
 	}, cur, true
 }
 
 // Iterate through a source string starting at the given cursor to find
-// the longest matching substring among the provided options (empty if)
-func longestMatch(source string, ic cursor, options []string) string {
+// the longest matching substring among the provided options (empty if
+// no match).
+func longestMatch(source string, ic Cursor, options []string) string {
 	var value []byte
 	var match string
 	skip := map[string]bool{}
 
 	cur := ic
 
-	for cur.pointer < uint(len(source)) {
-		value = append(value, strings.ToLower(string(source[cur.pointer]))...)
-		cur.pointer++
+	for cur.Pointer < uint(len(source)) {
+		value = append(value, strings.ToLower(string(source[cur.Pointer]))...)
+		cur.Pointer++
 	match:
 		for _, option := range options {
 			if skip[option] {
@@ -320,16 +360,15 @@ func longestMatch(source string, ic cursor, options []string) string {
 			}
 			if option == string(value) {
 				skip[option] = true
-				// Not clear to me why we need this check:
-				// We're adding characters progressively, so any match
-				// found should always be the longest so far.
-				if len(option) > len(match) {
-					match = option
-				}
+				// The original has a check that this value is longer than
+				// any match we've seen so far, but that seems unnecessary
+				// given that we're adding characters one at a time so
+				// any time we find an option it will always be the longest.
+				match = option
 				continue
 			}
 
-			sharesPrefix := string(value) == option[:cur.pointer-ic.pointer]
+			sharesPrefix := string(value) == option[:cur.Pointer-ic.Pointer]
 			tooLong := len(value) > len(option)
 			if tooLong || !sharesPrefix {
 				skip[option] = true
