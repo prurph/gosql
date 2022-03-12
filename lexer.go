@@ -94,7 +94,41 @@ lex:
 
 // Lexers for fundamental token types
 func lexIdentifier(source string, ic cursor) (*token, cursor, bool)
-func lexKeyword(source string, ic cursor) (*token, cursor, bool)
+
+func lexKeyword(source string, ic cursor) (*token, cursor, bool) {
+	cur := ic
+	keywords := []keyword{
+		selectKeyword,
+		fromKeyword,
+		asKeyword,
+		tableKeyword,
+		createKeyword,
+		insertKeyword,
+		intoKeyword,
+		valuesKeyword,
+		intKeyword,
+		textKeyword,
+	}
+
+	var options []string
+	for _, k := range keywords {
+		options = append(options, string(k))
+	}
+
+	match := longestMatch(source, ic, options)
+	if match == "" {
+		return nil, ic, false
+	}
+
+	cur.pointer = ic.pointer + uint(len(match))
+	cur.loc.col = ic.loc.col + uint(len(match))
+
+	return &token{
+		value: match,
+		kind:  keywordKind,
+		loc:   ic.loc,
+	}, cur, true
+}
 
 // Attempt to lex a number from the source at the given cursor
 func lexNumeric(source string, ic cursor) (*token, cursor, bool) {
