@@ -1,6 +1,9 @@
 package gosql
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type location struct {
 	line uint
@@ -213,4 +216,96 @@ func lexCharacterDelimited(source string, ic cursor, delimiter byte) (*token, cu
 	return nil, ic, false
 }
 
-func lexSymbol(source string, ic cursor) (*token, cursor, bool)
+// Symbols are elements of a fixed set of strings. Also discards whitespace.
+func lexSymbol(source string, ic cursor) (*token, cursor, bool) {
+	c := source[ic.pointer]
+	cur := ic
+	cur.pointer++
+	cur.loc.col++
+
+	// Syntax that should be discarded
+	switch c {
+	case '\n':
+		cur.loc.line++
+		cur.loc.col = 0
+		fallthrough
+	case '\t':
+		fallthrough
+	case ' ':
+		return nil, cur, true
+	}
+
+	// Syntax that should be maintained
+	symbols := []symbol{
+		commaSymbol,
+		leftparenSymbol,
+		rightparenSymbol,
+		semicolonSymbol,
+		asteriskSymbol,
+	}
+
+	// This language would be cooler with .map
+	var options []string
+	for _, s := range symbols {
+		options = append(options, string(s))
+	}
+
+	// `cur` has been advanced, so use the original `ic` for this
+	match := longestMatch(source, ic, options)
+	// Unknown character
+	if match == "" {
+		return nil, ic, false
+	}
+
+	cur.pointer = ic.pointer + uint(len(match))
+	cur.loc.col = ic.loc.col + uint(len(match))
+
+	return &token{
+		value: match,
+		loc:   ic.loc,
+		kind:  symbolKind,
+	}, cur, true
+}
+
+// Iterate through a source string starting at the given cursor to find
+// the longest matching substring among the provided options (empty if)
+func longestMatch(source string, ic cursor, options []string) string {
+	var value []byte
+	var match string
+	skip := map[string]bool{}
+
+	cur := ic
+
+	for cur.pointer < uint(len(source)) {
+		value = append(value, strings.ToLower(string(source[cur.pointer]))...)
+		cur.pointer++
+	match:
+		for _, option := range options {
+			if skip[option] {
+				continue match
+			}
+			if option == string(value) {
+				skip[option] = true
+				// Not clear to me why we need this check:
+				// We're adding characters progressively, so any match
+				// found should always be the longest so far.
+				if len(option) > len(match) {
+					match = option
+				}
+				continue
+			}
+
+			sharesPrefix := string(value) == option[:cur.pointer-ic.pointer]
+			tooLong := len(value) > len(option)
+			if tooLong || !sharesPrefix {
+				skip[option] = true
+			}
+		}
+
+		if len(skip) == len(options) {
+			break
+		}
+	}
+
+	return match
+}
