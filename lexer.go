@@ -1,5 +1,7 @@
 package gosql
 
+import "fmt"
+
 type location struct {
 	line uint
 	col  uint
@@ -59,3 +61,37 @@ func (t *token) equals(other *token) bool {
 // parse a token. If successful, returns a new token and
 // a new cursor.
 type lexer func(string, cursor) (*token, cursor, bool)
+
+// Main lexing loop
+func lex(source string) ([]*token, error) {
+	tokens := []*token{}
+	cur := cursor{}
+	lexers := []lexer{lexIdentifier, lexKeyword, lexNumeric, lexString, lexSymbol}
+
+lex:
+	for cur.pointer < uint(len(source)) {
+		for _, l := range lexers {
+			if token, newCursor, ok := l(source, cur); ok {
+				cur = newCursor
+				// Omit nil tokens for valid, but empty syntax like newlines
+				if token != nil {
+					tokens = append(tokens, token)
+				}
+				continue lex
+			}
+		}
+		hint := ""
+		if len(tokens) > 0 {
+			hint = " after " + tokens[len(tokens)-1].value
+		}
+		return nil, fmt.Errorf("Unable to lex token %s at %d:%d", hint, cur.loc.line, cur.loc.col)
+	}
+	return tokens, nil
+}
+
+// Lexers for fundamental token types
+func lexIdentifier(source string, ic cursor) (*token, cursor, bool)
+func lexKeyword(source string, ic cursor) (*token, cursor, bool)
+func lexNumeric(source string, ic cursor) (*token, cursor, bool)
+func lexString(source string, ic cursor) (*token, cursor, bool)
+func lexSymbol(source string, ic cursor) (*token, cursor, bool)
